@@ -1,7 +1,9 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include "mips32.h"
 #include "elf.h"
+
 
 #define ERROR_INVALID_ARGS "You need 2 arguments.\n1: A config file\n2: An executable elf file\n"
 #define ERROR_IO_ERROR "The file could not be read\n"
@@ -11,7 +13,13 @@
 #define ERROR_J "Error occured when trying to jump\n"
 #define ERROR_UNKNOWN_INSTRUCTION -3
 #define ERROR_UNKNOWN_OPCODE -2
+#define ERROR_UNKNOWN_FUNCT -4
+#define ERROR_INTERP_CONTROL -1
+#define ERROR_INTERP_ID -2
+#define ERROR_INTERP_EX -3
+#define ERROR_INTERP_MEM -4
 #define SAW_SYSCALL -1
+
 
 #define AT regs[1]
 #define V0 regs[2]
@@ -25,6 +33,38 @@ struct preg_if_id {
   uint32_t inst;
 };
 static struct preg_if_id if_id;
+
+struct preg_id_ex {
+  bool mem_read;
+  bool mem_write;
+  bool reg_write;
+
+  uint32_t rt;
+  uint32_t rs_value;
+  uint32_t rt_value;
+  uint32_t sign_ext_imm;
+  uint32_t funct;
+};
+static struct preg_id_ex id_ex;
+
+struct preg_ex_mem {
+  bool mem_read;
+  bool mem_write;
+  bool reg_write;
+
+  uint32_t rt;
+  uint32_t rt_value;
+  uint32_t alu_res;
+};
+static struct preg_ex_mem ex_mem;
+
+struct preg_mem_wb {
+  bool reg_write;
+
+  uint32_t rt;
+  uint32_t read_data;
+};
+static struct preg_mem_wb mem_wb;
 
 static uint32_t PC;
 static size_t instr_cnt;
@@ -360,18 +400,155 @@ int interp_inst (uint32_t inst){
   return retval;
 }
 
-// Interpret if
+int interp_control(){
+  if (if_id.inst == 0) {
+    id_ex.mem_read  = false;
+    id_ex.mem_write = false;
+    id_ex.reg_write = false; 
+    return 0;
+  }
+  uint32_t opcode = GET_OPCODE(if_id.inst);
+  switch (opcode){
+    
+    case OPCODE_R :
+      id_ex.reg_write     = true;
+      
+
+    case OPCODE_LW :
+      id_ex.mem_read      = true;
+      id_ex.reg_write     = true;
+      id_ex.rt            = GET_RT(if_id.inst);
+      id_ex.rs_value      = regs[GET_RS(if_id.inst)];
+      id_ex.rt_value      = regs[id_ex.rt];
+      id_ex.sign_ext_imm  = SIGN_EXTEND(GET_IMM(if_id.inst));
+      id_ex.funct         = FUNCT_ADD;
+      break;
+  
+    case OPCODE_SW :
+      id_ex.mem_write     = true;
+      id_ex.rt            = GET_RT(if_id.inst);
+      id_ex.rs_value      = regs[GET_RS(if_id.inst)];
+      id_ex.rt_value      = regs[id_ex.rt];
+      id_ex.sign_ext_imm  = SIGN_EXTEND(GET_IMM(if_id.inst));
+      id_ex.funct         = FUNCT_ADD;
+      break;
+
+    default:
+      printf("ERROR: Unknown opcode in interp_control()\n"); 
+      return ERROR_UNKNOWN_OPCODE; 
+  } 
+  return 0;   
+}
+
+
+int interp_id() {
+
+  // Set all values to 0 or false
+  id_ex.mem_read  = false;
+  id_ex.mem_write = false;
+  id_ex.reg_write = false;
+  
+  id_ex.rt            = 0;
+  id_ex.rs_value      = 0;
+  id_ex.rt_value      = 0;
+  id_ex.sign_ext_imm  = 0;
+  id_ex.funct         = 0;
+  int retControl = interp_control();
+  if (retControl != 0){
+    printf("ERROR: interp_control() failed\n");
+    return ERROR_INTERP_CONTROL;
+  }
+  if (id_ex.reg_write) {
+    printf("ID_EX: TRUE\n");
+  }
+  return 0;
+}
+
+
+int alu() {
+  
+  switch (id_ex.funct) {
+    case (FUNCT_ADD):
+      ex_mem.alu_res = id_ex.sign_ext_imm + id_ex.rs_value; 
+      break;
+
+    // HACK
+    case (0):
+      break; 
+ 
+    default:
+      printf("ERROR: Unknown funct in alu()\n");
+      return ERROR_UNKNOWN_FUNCT;
+  }
+  return 0;
+}
+
+int interp_ex(){
+  ex_mem.mem_read   = id_ex.mem_read;
+  ex_mem.mem_write  = id_ex.mem_write;
+  ex_mem.reg_write  = id_ex.reg_write;
+  ex_mem.rt         = id_ex.rt; 
+  ex_mem.rt_value   = id_ex.rt_value;
+  int retAlu = alu();
+  if (retAlu != 0) {
+    printf("ERROR: alu() failed\n");
+  }
+  
+  
+  if (ex_mem.reg_write) {
+    printf("EX_MEM: TRUE\n");
+  }
+  return retAlu;
+}
+
+void interp_mem(){
+  mem_wb.reg_write  = ex_mem.reg_write;  
+  mem_wb.rt         = ex_mem.rt;
+  if (mem_wb.reg_write)
+    printf("mem_wb: TRUE\n"); 
+  if (ex_mem.mem_read) {
+    mem_wb.read_data = GET_BIGWORD(mem, ex_mem.alu_res);
+  }
+  if (ex_mem.mem_write) {
+    SET_BIGWORD(mem, ex_mem.alu_res, ex_mem.rt_value);
+  }
+}
+
+void interp_wb(){
+  if (mem_wb.reg_write) { 
+    printf("TRUE\n");
+    if (mem_wb.rt != 0) {
+      printf("rt: %u\n", mem_wb.rt);
+      regs[mem_wb.rt] = mem_wb.read_data;
+    } 
+  }
+}
+
+
 void interp_if(){
   if_id.inst = GET_BIGWORD(mem, PC);
   PC = PC + 4;
   instr_cnt++;
-  return 0; 
 }
 
 // Stub function
-int cycle() {
+int cycle(){
+  interp_wb();
+  interp_mem();
+  int retEx = interp_ex();
+  if (retEx != 0) {
+    printf("ERROR: interp_ex() failed\n");
+    return ERROR_INTERP_EX;
+  }
+  int retId = interp_id();
+  if (retId != 0) {
+    printf("ERROR: interp_id() failed\n");
+    return ERROR_INTERP_ID;
+  }
   interp_if();
-  return SAW_SYSCALL; 
+  if (0) 
+    return SAW_SYSCALL; 
+  return 0;
 }
 
 // Runs an infinite loop and increments the PC
@@ -385,10 +562,9 @@ int interp(){
   
     cycles++;
     int retCycle = cycle();
-    if (retCycle == SAW_SYSCALL)
+    if (retCycle == SAW_SYSCALL || retCycle == ERROR_INTERP_ID)
       stop = 1;
   }
-
   return 0;
 }
 
