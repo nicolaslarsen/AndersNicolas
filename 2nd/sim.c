@@ -412,7 +412,10 @@ int interp_control(){
     
     case OPCODE_R :
       id_ex.reg_write     = true;
-      
+      id_ex.rt            = GET_RT(if_id.inst);
+      id_ex.rs_value      = regs[GET_RS(if_id.inst)];
+      id_ex.rt_value      = regs[id_ex.rt];
+      id_ex.funct         = GET_FUNCT(if_id.inst); 
 
     case OPCODE_LW :
       id_ex.mem_read      = true;
