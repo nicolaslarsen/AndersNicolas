@@ -31,6 +31,7 @@
 
 struct preg_if_id {
   uint32_t inst;
+  uint32_t next_pc;
 };
 static struct preg_if_id if_id;
 
@@ -40,6 +41,7 @@ struct preg_id_ex {
   bool reg_write;
   bool alu_src;
   bool mem_to_reg;
+  bool branch;
 
   uint32_t reg_dst;
   uint32_t rt;
@@ -48,6 +50,7 @@ struct preg_id_ex {
   uint32_t sign_ext_imm;
   uint32_t funct;
   uint32_t shamt;
+  uint32_t next_pc;
 };
 static struct preg_id_ex id_ex;
 
@@ -56,11 +59,13 @@ struct preg_ex_mem {
   bool mem_write;
   bool reg_write;
   bool mem_to_reg;
-  
+  bool branch;
+ 
   uint32_t reg_dst;
   uint32_t rt;
   uint32_t rt_value;
   uint32_t alu_res;
+  uint32_t branch_target;
 };
 static struct preg_ex_mem ex_mem;
 
@@ -421,6 +426,24 @@ int interp_control(){
       id_ex.shamt         = GET_SHAMT(if_id.inst);
       break;
 
+    case OPCODE_BEQ :
+      id_ex.branch        = true;
+      id_ex.rt            = GET_RT(if_id.inst);
+      id_ex.rs_value      = regs[GET_RS(if_id.inst)];
+      id_ex.rt_value      = regs[id_ex.rt];
+      id_ex.sign_ext_imm  = SIGN_EXTEND(GET_IMM(if_id.inst));
+      id_ex.funct         = FUNCT_SUB;
+      break;
+    
+    case OPCODE_BNE :
+      id_ex.branch        = true;
+      id_ex.rt            = GET_RT(if_id.inst);
+      id_ex.rs_value      = regs[GET_RS(if_id.inst)];
+      id_ex.rt_value      = regs[id_ex.rt];
+      id_ex.sign_ext_imm  = SIGN_EXTEND(GET_IMM(if_id.inst));
+      id_ex.funct         = FUNCT_SUB;
+      break;
+
     case OPCODE_LW :
       id_ex.mem_read      = true;
       id_ex.reg_write     = true;
@@ -460,6 +483,7 @@ int interp_id() {
   id_ex.reg_write   = false;
   id_ex.alu_src     = false;
   id_ex.mem_to_reg  = false;
+  id_ex.branch      = false;
 
   id_ex.rt            = 0;
   id_ex.rs_value      = 0;
@@ -467,6 +491,7 @@ int interp_id() {
   id_ex.sign_ext_imm  = 0;
   id_ex.funct         = 0;
   id_ex.shamt         = 0;
+  id_ex.next_pc       = if_id.next_pc;
   int retControl = interp_control();
   if (retControl != 0){
     printf("ERROR: interp_control() failed\n");
@@ -547,13 +572,16 @@ int alu() {
 }
 
 int interp_ex(){
-  ex_mem.mem_read   = id_ex.mem_read;
-  ex_mem.mem_write  = id_ex.mem_write;
-  ex_mem.reg_write  = id_ex.reg_write;
-  ex_mem.rt         = id_ex.rt; 
-  ex_mem.rt_value   = id_ex.rt_value;
-  ex_mem.mem_to_reg = id_ex.mem_to_reg;
-  ex_mem.reg_dst    = id_ex.reg_dst;
+  ex_mem.mem_read       = id_ex.mem_read;
+  ex_mem.mem_write      = id_ex.mem_write;
+  ex_mem.reg_write      = id_ex.reg_write;
+  ex_mem.branch         = id_ex.branch;
+  ex_mem.rt             = id_ex.rt; 
+  ex_mem.rt_value       = id_ex.rt_value;
+  ex_mem.mem_to_reg     = id_ex.mem_to_reg;
+  ex_mem.reg_dst        = id_ex.reg_dst;
+  ex_mem.branch_target  = id_ex.next_pc + (id_ex.sign_ext_imm << 2);
+  
 
   int retAlu = alu();
   if (retAlu == SAW_SYSCALL) {
@@ -599,6 +627,7 @@ void interp_wb(){
 void interp_if(){
   if_id.inst = GET_BIGWORD(mem, PC);
   PC = PC + 4;
+  if_id.next_pc = PC;
   instr_cnt++;
 }
 
@@ -621,6 +650,11 @@ int cycle(){
     return ERROR_INTERP_ID;
   }
   interp_if();
+  if (ex_mem.branch && ex_mem.alu_res == 0) {
+    PC = ex_mem.branch_target;
+    if_id.inst = 0;
+    instr_cnt--;
+  }
   return retval;
 }
 
