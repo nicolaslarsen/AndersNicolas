@@ -47,6 +47,7 @@ struct preg_id_ex {
   uint32_t rt_value;
   uint32_t sign_ext_imm;
   uint32_t funct;
+  uint32_t shamt;
 };
 static struct preg_id_ex id_ex;
 
@@ -407,9 +408,6 @@ int interp_inst (uint32_t inst){
 }
 
 int interp_control(){
-  if (if_id.inst == 0) {
-    return 0;
-  }
   uint32_t opcode = GET_OPCODE(if_id.inst);
   switch (opcode){
     
@@ -420,6 +418,7 @@ int interp_control(){
       id_ex.rs_value      = regs[GET_RS(if_id.inst)];
       id_ex.rt_value      = regs[id_ex.rt];
       id_ex.funct         = GET_FUNCT(if_id.inst);
+      id_ex.shamt         = GET_SHAMT(if_id.inst);
       break;
 
     case OPCODE_LW :
@@ -467,6 +466,7 @@ int interp_id() {
   id_ex.rt_value      = 0;
   id_ex.sign_ext_imm  = 0;
   id_ex.funct         = 0;
+  id_ex.shamt         = 0;
   int retControl = interp_control();
   if (retControl != 0){
     printf("ERROR: interp_control() failed\n");
@@ -482,10 +482,6 @@ int alu() {
       case (FUNCT_ADD):
         ex_mem.alu_res = id_ex.sign_ext_imm + id_ex.rs_value;
         break;
-
-      // HACK
-      case (0):
-        break; 
  
       default:
         printf("ERROR: Unknown funct in alu()\n");
@@ -498,11 +494,49 @@ int alu() {
         ex_mem.alu_res = id_ex.rs_value + id_ex.rt_value;
         break;     
  
+      case (FUNCT_ADDU):
+        ex_mem.alu_res = id_ex.rs_value + id_ex.rt_value;
+        break;
+
+      case (FUNCT_AND):
+        ex_mem.alu_res = id_ex.rs_value & id_ex.rt_value;
+        break;
+
+      case (FUNCT_NOR):
+        ex_mem.alu_res = ~(id_ex.rs_value | id_ex.rt_value);
+        break;
+
+      case (FUNCT_OR):
+        ex_mem.alu_res = id_ex.rs_value | id_ex.rt_value;
+        break;
+
+      case (FUNCT_SLL):
+        ex_mem.alu_res = id_ex.rt_value << id_ex.shamt;
+        break;
+     
+      case (FUNCT_SLTU):
+        if (id_ex.rs_value < id_ex.rt_value) {
+          ex_mem.alu_res = 1;
+        }
+        else {
+          ex_mem.alu_res = 0;
+        }
+        break;
+ 
+      case (FUNCT_SRL):
+        ex_mem.alu_res = id_ex.rt_value >> id_ex.shamt;
+        break;
+
+      case (FUNCT_SUB):
+        ex_mem.alu_res = id_ex.rs_value - id_ex.rt_value;
+        break;
+
+      case (FUNCT_SUBU):
+        ex_mem.alu_res = id_ex.rs_value - id_ex.rt_value;
+        break;
+  
       case (FUNCT_SYSCALL):
         return SAW_SYSCALL;
-
-      case (0):
-        break;
 
       default:
         printf("ERROR: Unknown funct in alu()\n");
