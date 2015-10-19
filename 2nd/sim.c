@@ -53,6 +53,7 @@ struct preg_id_ex {
   uint32_t funct;
   uint32_t shamt;
   uint32_t next_pc;
+  uint32_t jump_target;
 };
 static struct preg_id_ex id_ex;
 
@@ -63,8 +64,7 @@ struct preg_ex_mem {
   bool mem_to_reg;
   bool branch;
   bool beq;
-  bool jump;
- 
+  
   uint32_t reg_dst;
   uint32_t rt;
   uint32_t rt_value;
@@ -158,6 +158,7 @@ int read_config(const char *path) {
 
 int interp_control(){
   uint32_t opcode = GET_OPCODE(if_id.inst);
+  uint32_t address;
   switch (opcode){
     
     case OPCODE_R :
@@ -168,10 +169,10 @@ int interp_control(){
       id_ex.rt_value      = regs[id_ex.rt];
       id_ex.funct         = GET_FUNCT(if_id.inst);
       id_ex.shamt         = GET_SHAMT(if_id.inst);
-      
-    case  FUNCT_JR :
-      // something
-      
+      if (id_ex.funct == FUNCT_JR) {
+        id_ex.jump        = true;
+        id_ex.jump_target = id_ex.rs_value;
+      } 
       break;
 
     case OPCODE_BEQ :
@@ -217,6 +218,24 @@ int interp_control(){
       id_ex.sign_ext_imm  = SIGN_EXTEND(GET_IMM(if_id.inst));
       id_ex.funct         = FUNCT_ADD;
       break;
+
+    case OPCODE_J :
+      id_ex.jump          = true;
+      address             = GET_ADDRESS(if_id.inst);
+      id_ex.jump_target   = (if_id.next_pc & MS_4B) | (address << 2);
+      break;
+
+    case OPCODE_JAL :
+      id_ex.reg_write     = true;
+      id_ex.jump          = true;
+      address             = GET_ADDRESS(if_id.inst);
+      id_ex.jump_target   = (if_id.next_pc & MS_4B) | (address << 2);
+      id_ex.rs_value      = 0;
+      id_ex.rt_value      = if_id.next_pc;
+      id_ex.reg_dst       = 31;
+      id_ex.funct         = FUNCT_ADD;
+      break;
+
     // INSTRUKTOR -2: Make cases for all I-type and J-type instructions
     default:
       printf("ERROR: Unknown opcode in interp_control()\n"); 
@@ -235,6 +254,7 @@ int interp_id() {
   id_ex.alu_src     = false;
   id_ex.mem_to_reg  = false;
   id_ex.branch      = false;
+  id_ex.jump        = false;
 
   id_ex.rt            = 0;
   id_ex.rs_value      = 0;
@@ -242,6 +262,7 @@ int interp_id() {
   id_ex.sign_ext_imm  = 0;
   id_ex.funct         = 0;
   id_ex.shamt         = 0;
+  id_ex.jump_target   = 0;
   // INSTRUKTOR 0: you might as well instantiate all the fields
   // (not control bits) right away. If some instructions 'hack'
   // any of the fields, then you just overwrite them in the controller
@@ -315,11 +336,7 @@ int alu() {
         }
         break;
 
-      // INSTRUKTOR -2: How about slt? 
-      // When implementing this case, be aware of the difference
-      // of signed and unsigned comparisons.
-      // (1101 will fx be 13 in unsigned version and -3 in signed version) 
-      case (FUNCT_SRL):
+     case (FUNCT_SRL):
         ex_mem.alu_res = id_ex.rt_value >> id_ex.shamt;
         break;
 
@@ -332,7 +349,7 @@ int alu() {
         break;
   
       case (FUNCT_JR):
-        // Something
+        // Nothing
         break;
       
       case (FUNCT_SYSCALL):
@@ -352,13 +369,11 @@ int interp_ex(){
   ex_mem.reg_write      = id_ex.reg_write;
   ex_mem.branch         = id_ex.branch;
   ex_mem.beq            = id_ex.beq;
-  ex_mem.jump           = id_ex.jump;
   ex_mem.rt             = id_ex.rt; 
   ex_mem.rt_value       = id_ex.rt_value;
   ex_mem.mem_to_reg     = id_ex.mem_to_reg;
   ex_mem.reg_dst        = id_ex.reg_dst;
-  ex_mem.branch_target  = id_ex.next_pc + (id_ex.sign_ext_imm << 2);
-  
+  ex_mem.branch_target  = id_ex.next_pc + (id_ex.sign_ext_imm << 2); 
 
   int retAlu = alu();
   
@@ -433,10 +448,9 @@ int cycle(){
       instr_cnt--;
     } 
   }
-  if (ex_mem.jump) {
-    PC = ex_mem.branch_target;
-    if_id.inst = 0;
-    instr_cnt--; 
+  if (id_ex.jump) {
+    PC = id_ex.jump_target;
+    printf("jump: 0x%x\n",id_ex.jump_target); 
   }
     
   return retval;
