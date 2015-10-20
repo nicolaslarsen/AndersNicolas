@@ -1,11 +1,4 @@
-addiu $a0, $a0, 2
-addiu $a1, $a1, 4
-addiu $a2, $a2, 1
-addiu $a3, $a3, 3
-addiu $sp, $sp, -12
-addiu $t1, $t1, 42
-addiu $t0, $t0, 43
-addiu $s0, $s0, 44
+addi $sp, $sp, -12
 sw $t1, 8($sp)
 sw $t0, 4($sp)
 sw $s0, 0($sp)

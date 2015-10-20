@@ -171,6 +171,7 @@ int interp_control(){
       id_ex.funct         = GET_FUNCT(if_id.inst);
       id_ex.shamt         = GET_SHAMT(if_id.inst); 
       if (id_ex.funct == FUNCT_JR) {
+        
         id_ex.jump        = true;
 
         if (mem_wb.reg_dst == id_ex.rs && mem_wb.reg_write){
@@ -241,23 +242,88 @@ int interp_control(){
       id_ex.reg_dst       = 31;
       id_ex.funct         = FUNCT_ADD;
       break;
-/*
+
     case OPCODE_ADDI :
       id_ex.reg_write     = true;
       id_ex.alu_src       = true;
+      id_ex.rs            = GET_RS(if_id.inst);
+      id_ex.rs_value      = regs[id_ex.rs];
       id_ex.reg_dst       = GET_RT(if_id.inst);
+      id_ex.ext_imm       = SIGN_EXTEND(GET_IMM(if_id.inst));
       id_ex.funct         = FUNCT_ADD;
       break;      
     
     case OPCODE_ADDIU :
       id_ex.reg_write     = true;
       id_ex.alu_src       = true;
+      id_ex.rs            = GET_RS(if_id.inst);
+      id_ex.rs_value      = regs[id_ex.rs];
       id_ex.reg_dst       = GET_RT(if_id.inst);
+      id_ex.ext_imm       = SIGN_EXTEND(GET_IMM(if_id.inst));
       id_ex.funct         = FUNCT_ADD;
       break;      
- */
 
-    // INSTRUKTOR -2: Make cases for all I-type and J-type instructions
+    case OPCODE_ANDI :
+      id_ex.reg_write     = true;
+      id_ex.rs            = GET_RS(if_id.inst);
+      id_ex.rs_value      = regs[id_ex.rs];
+      id_ex.reg_dst       = GET_RT(if_id.inst);
+      id_ex.ext_imm       = ZERO_EXTEND(GET_IMM(if_id.inst));
+      id_ex.rt_value      = id_ex.ext_imm; //hack
+      id_ex.funct         = FUNCT_AND;
+      break;
+
+     case OPCODE_ORI :
+      id_ex.reg_write     = true;
+      id_ex.rs            = GET_RS(if_id.inst);
+      id_ex.rs_value      = regs[id_ex.rs];
+      id_ex.reg_dst       = GET_RT(if_id.inst);
+      id_ex.ext_imm       = ZERO_EXTEND(GET_IMM(if_id.inst));
+      id_ex.rt_value      = id_ex.ext_imm; //hack
+      id_ex.funct         = FUNCT_OR;
+      break;
+
+    case OPCODE_LUI :
+      id_ex.reg_write     = true;
+      id_ex.ext_imm       = GET_IMM(if_id.inst) << 16;
+      id_ex.rt_value      = id_ex.ext_imm; //hack
+      id_ex.reg_dst       = GET_RT(if_id.inst);
+      id_ex.funct         = FUNCT_ADD;
+      break;
+
+    case OPCODE_SLTI :
+      id_ex.reg_write     = true;
+      id_ex.ext_imm       = SIGN_EXTEND(GET_IMM(if_id.inst));
+      int signed_ext_imm  = id_ex.ext_imm;
+      id_ex.rs            = GET_RS(if_id.inst);
+      int signed_rs_value = regs[id_ex.rs];
+      if (signed_rs_value < signed_ext_imm) {
+        id_ex.rs_value = 1;
+      }
+      else {
+        id_ex.rs_value = 0;
+      }
+      id_ex.rt_value      = 0; //hack
+      id_ex.reg_dst       = GET_RT(if_id.inst);
+      id_ex.funct         = FUNCT_ADD;
+      break;
+
+    case OPCODE_SLTIU :
+      id_ex.reg_write     = true;
+      id_ex.ext_imm       = SIGN_EXTEND(GET_IMM(if_id.inst));
+      id_ex.rs            = GET_RS(if_id.inst);
+      id_ex.rs_value      = regs[id_ex.rs];
+      if (id_ex.rs_value < id_ex.ext_imm) {
+        id_ex.rs_value = 1;
+      }
+      else {
+        id_ex.rs_value = 0;
+      }
+      id_ex.rt_value      = 0; //hack
+      id_ex.reg_dst       = GET_RT(if_id.inst);
+      id_ex.funct         = FUNCT_ADD;
+      break;
+    
     default:
       printf("ERROR: Unknown opcode: 0x%x in interp_control()\n", opcode); 
       return ERROR_UNKNOWN_OPCODE; 
@@ -303,7 +369,7 @@ int alu() {
   if (id_ex.alu_src) {
     switch (id_ex.funct) {
       case (FUNCT_ADD):
-        ex_mem.alu_res = id_ex.ext_imm + id_ex.rs_value;
+        ex_mem.alu_res = id_ex.rs_value + id_ex.ext_imm;
         break;
  
       default:
