@@ -362,10 +362,6 @@ int interp_id() {
 
 
 int alu() {
-  // INSTRUKTOR 0: instead of the if-else case, then simply
-  // add a variable and use this as second operand in all operations.
-  // Then you can make a simple test here, to see if
-  // it should hold the imm. value or the rt_value.
   if (id_ex.alu_src) {
     switch (id_ex.funct) {
       case (FUNCT_ADD):
